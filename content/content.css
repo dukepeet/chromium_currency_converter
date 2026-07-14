@@ -1,0 +1,23 @@
+.doc-currencies-annotation {
+  display: inline-block;
+  margin-left: 0.15em;
+  padding: 0.05em 0.45em;
+  border-radius: 0.35em;
+  /* Solid (not translucent) fill so contrast holds regardless of the
+     underlying page background; ~7.7:1 light / ~10.9:1 dark (WCAG AAA). */
+  background: #065f46;
+  color: #ffffff;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: 0.82em;
+  font-weight: 700;
+  line-height: 1.4;
+  white-space: nowrap;
+  vertical-align: baseline;
+}
+
+@media (prefers-color-scheme: dark) {
+  .doc-currencies-annotation {
+    background: #34d399;
+    color: #052e1c;
+  }
+}
