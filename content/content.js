@@ -137,24 +137,29 @@
     observer.observe(document.documentElement, { childList: true, subtree: true });
   }
 
+  // Asks the background service worker for live rates. It fetches fresh
+  // rates on every call (deduping concurrent requests from multiple tabs)
+  // and only falls back to its cached copy if the live fetch fails.
   async function loadState() {
-    const stored = await chrome.storage.local.get(['targetCurrency', 'rates', 'ratesDate']);
-    targetCurrency = stored.targetCurrency || null;
-    rates = stored.rates || null;
-    ratesDate = stored.ratesDate || null;
+    let response;
+    try {
+      response = await chrome.runtime.sendMessage({ type: 'get-rates' });
+    } catch (err) {
+      console.error('[Dictionary of Currencies] could not reach background for rates', err);
+      return;
+    }
+    if (!response || !response.ok) {
+      console.error('[Dictionary of Currencies] rate fetch failed', response && response.error);
+      return;
+    }
+    targetCurrency = response.targetCurrency || null;
+    rates = response.rates || null;
+    ratesDate = response.ratesDate || null;
   }
-
-  chrome.storage.onChanged.addListener((changes, area) => {
-    if (area !== 'local') return;
-    if (!('targetCurrency' in changes) && !('rates' in changes)) return;
-    loadState().then(() => {
-      if (isReady()) schedule(document.body);
-    });
-  });
 
   (async function init() {
     await loadState();
-    if (document.body) schedule(document.body);
+    if (isReady() && document.body) schedule(document.body);
     startObserving();
   })();
 })();
