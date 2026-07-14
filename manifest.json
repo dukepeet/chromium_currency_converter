@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "Dictionary of Currencies",
+  "version": "0.1.0",
+  "description": "Shows prices found on any web page converted into your currency of choice, right next to the original price.",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "permissions": ["storage", "alarms"],
+  "host_permissions": ["https://api.frankfurter.app/*"],
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["shared/currencies.js", "content/converter.js", "content/content.js"],
+      "css": ["content/content.css"],
+      "run_at": "document_idle"
+    }
+  ]
+}
