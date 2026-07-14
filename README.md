@@ -18,11 +18,15 @@ and rendering logic are already currency-agnostic.
 
 - `background.js` — a service worker that fetches live exchange rates from
   the free [Frankfurter API](https://www.frankfurter.dev/) (ECB reference
-  rates, no API key required) on demand: every time a content script loads
-  on a page, it asks the background worker for rates, which performs a
-  fresh network fetch (deduping concurrent requests from multiple tabs into
-  one call). The last successful fetch is cached in `chrome.storage.local`
-  purely as an offline/error fallback if the live request fails.
+  rates, no API key required). Every content script asks the background
+  worker for rates when its page loads; the *first* such request in a
+  browser session performs a real network fetch (deduping concurrent
+  requests from multiple tabs into one call) and caches the result in
+  `chrome.storage.session` — storage that survives service worker restarts
+  but is cleared when the browser closes — so every later page load in the
+  same session reuses it with no extra network call. `chrome.storage.local`
+  additionally keeps the last successful fetch as a fallback for when a
+  session's first request fails (e.g. briefly offline at startup).
 - `content/converter.js` — pure matching/parsing logic: finds currency
   amounts in a string (by symbol, e.g. `€12.99`, or by ISO code, e.g.
   `12.99 EUR`), parses locale-formatted numbers (`1,234.56`, `1.234,56`,

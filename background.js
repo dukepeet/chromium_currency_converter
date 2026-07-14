@@ -1,9 +1,10 @@
 // The MVP always converts into forint; this is the one line to change (or
 // later replace with a stored, user-configurable value) for any-to-any.
 const TARGET_CURRENCY = 'HUF';
+const RATE_KEYS = ['targetCurrency', 'rates', 'ratesDate', 'ratesUpdated'];
 
-// Coalesces concurrent requests (e.g. several tabs loading at once) into a
-// single network call instead of hammering the API.
+// Coalesces concurrent requests (e.g. several tabs all loading at browser
+// startup) into a single network call instead of hammering the API.
 let inFlight = null;
 
 async function fetchRates() {
@@ -17,7 +18,11 @@ async function fetchRates() {
     ratesDate: data.date,
     ratesUpdated: Date.now(),
   };
-  // Cached only as an offline/error fallback, not as the primary source.
+  // chrome.storage.session survives service worker restarts but is cleared
+  // when the browser closes, so it's exactly "once per browser session".
+  await chrome.storage.session.set(payload);
+  // chrome.storage.local is a longer-lived fallback for when a session's
+  // very first fetch fails (e.g. briefly offline at browser startup).
   await chrome.storage.local.set(payload);
   return payload;
 }
@@ -32,12 +37,15 @@ function getFreshRates() {
 }
 
 async function getRatesForContentScript() {
+  const sessionCached = await chrome.storage.session.get(RATE_KEYS);
+  if (sessionCached.rates) return { ...sessionCached, stale: false };
+
   try {
     const payload = await getFreshRates();
     return { ...payload, stale: false };
   } catch (err) {
     console.error('[Dictionary of Currencies] live rate fetch failed, falling back to cache', err);
-    const cached = await chrome.storage.local.get(['targetCurrency', 'rates', 'ratesDate', 'ratesUpdated']);
+    const cached = await chrome.storage.local.get(RATE_KEYS);
     if (cached.rates) return { ...cached, stale: true };
     throw err;
   }
