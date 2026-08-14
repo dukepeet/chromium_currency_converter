@@ -1,5 +1,8 @@
 # Dictionary of Currencies
 
+Annotates prices on any web page with the equivalent amount in your own
+currency.
+
 A Chrome extension inspired by the (now unsupported) *Dictionary of
 Numbers*. Instead of annotating physical units, it scans the page you're
 browsing for prices and appends the equivalent amount in your own currency
