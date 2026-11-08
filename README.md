@@ -81,5 +81,9 @@ Amounts must be in a single text node to be detected.
 
 ## Tests
 
-Run `node --test tests/converter.test.cjs` (Node.js 18 or newer).
+Run `node --test tests/*.test.cjs` (Node.js 22 or newer).
 No dependencies or build step are needed.
+
+GitHub Actions runs syntax checks and the complete regression suite on
+Node.js 22 and 24 for pull requests, pushes to main/fix branches, and manual
+runs. See [the test plan](tests/README.md) for coverage and browser checks.
