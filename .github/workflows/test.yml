@@ -1,0 +1,65 @@
+name: Tests
+
+on:
+  push:
+    branches: [main, 'fix/**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: JavaScript checks (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Check JavaScript syntax
+        run: npm run check
+      - name: Run parser, generated consistency, and background-worker tests
+        run: npm run test:unit
+      - name: Check whitespace
+        run: git show --format= --check HEAD
+
+  browser:
+    name: Chromium page integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install locked test dependencies
+        run: npm ci --include=dev
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Run real-page script integration tests
+        run: npm run test:browser
+      - name: Upload report and failure traces
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: chromium-test-results
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7

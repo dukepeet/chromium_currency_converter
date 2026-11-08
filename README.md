@@ -33,7 +33,9 @@ and rendering logic are already currency-agnostic.
 - `content/converter.js` — pure matching/parsing logic: finds currency
   amounts in a string (by symbol, e.g. `€12.99`, or by ISO code, e.g.
   `12.99 EUR`), parses locale-formatted numbers (`1,234.56`, `1.234,56`,
-  `1 234,56`), converts using the cached rates, and formats the result.
+  `1 234,56`), expands magnitude suffixes (e.g. `$300k` → USD 300,000
+  and `1.5m EUR` → EUR 1,500,000), converts using the cached rates, and
+  formats the result.
 - `content/content.js` — walks the page's text nodes with a `TreeWalker`,
   wraps each detected price in a `<span>` followed by a small converted-value
   annotation, and uses a `MutationObserver` to keep annotating content that
@@ -63,3 +65,51 @@ No build step — it's plain JS/CSS/JSON.
   `199 SEK`, etc.).
 - No on/off toggle or per-site exceptions yet — this is intentionally just
   the core "find price → show conversion" engine for now.
+
+## Large amounts
+
+Amounts can use case-insensitive `k` (thousand), `m` / `mn` (million),
+`b` / `bn` (billion), or `t` / `tn` (trillion). The full words `thousand`,
+`million`, `billion`, and `trillion` are supported too. Billion means 10⁹
+and trillion means 10¹². An optional space may separate the number and
+suffix: `$300k`, `€1.5 M`, `USD 2bn`, and `2 million EUR` all work.
+The annotation follows the complete original amount, including its suffix.
+
+Signed amounts are supported before the number or currency marker:
+`-300k EUR`, `USD -300k`, and `-$300k`. Leading fractions such as `-.5m EUR`
+mean minus half a million. A hyphen between two detected prices is a range
+separator (`$300k-$500k`), not a negative upper endpoint. Comma-separated
+prices such as `300k EUR,500k EUR` remain separate amounts.
+
+Existing separator rules still apply: with an integer part, a lone comma or
+dot followed by exactly three digits is treated as a thousands separator,
+not a decimal. A leading separator without an integer part is always decimal
+(`.500m` means half a million). Currency markers, numbers and suffixes are
+never joined across line separators. Amounts must be in a single text node
+to be detected.
+
+## Tests
+
+Use Node.js 22 or newer. Parser, generated consistency and background-worker
+tests run without dependencies:
+
+```sh
+npm run test:unit
+```
+
+For the complete suite, including real Chromium page-script tests:
+
+```sh
+npm ci --include=dev
+npx playwright install chromium
+npm test
+```
+
+On Linux CI hosts, use `npx playwright install --with-deps chromium` to also
+install browser system libraries. Playwright is a development-only dependency;
+the extension still has no runtime dependency or build step.
+
+GitHub Actions runs syntax and Node tests on Node.js 22 and 24, plus a
+Chromium integration job with failure reports/traces, for pull requests,
+pushes to main/fix branches, and manual runs. See [the test plan](tests/README.md)
+for coverage and remaining browser checks.
