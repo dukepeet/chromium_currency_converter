@@ -18,12 +18,31 @@
   // Matches 1,234.56 / 1.234,56 / 1 234,56 / 1234 / 1234.5 etc.
   const NUM_PATTERN = '\\d{1,3}(?:[\\s.,]\\d{3})+(?:[.,]\\d+)?|\\d+(?:[.,]\\d+)?';
 
+  // Keep all groups non-capturing: findMatches relies on the currency/amount
+  // capture positions below. Do not make the entire matcher case-insensitive:
+  // currency symbols and ISO codes retain their existing case rules.
+  const MULTIPLIERS = {
+    k: 1e3, thousand: 1e3,
+    m: 1e6, mn: 1e6, million: 1e6,
+    b: 1e9, bn: 1e9, billion: 1e9,
+    t: 1e12, tn: 1e12, trillion: 1e12,
+  };
+  const MAGNITUDE_PATTERN = Object.keys(MULTIPLIERS)
+    .sort((a, b) => b.length - a.length)
+    .map((word) => word.replace(/[a-z]/g, (ch) => `[${ch}${ch.toUpperCase()}]`))
+    .join('|');
+  // A suffix must end here, not be the start of a word (e.g. "monthly"
+  // or "Kč"). Horizontal spaces include non-breaking spaces used in prices.
+  const SUFFIX_PATTERN = `(?:${MAGNITUDE_PATTERN})(?![\\p{L}\\p{N}_])`;
+  const AMOUNT_PATTERN = `(?:${NUM_PATTERN})(?:[^\\S\\r\\n]*${SUFFIX_PATTERN})?`;
+  const SUFFIX_RE = new RegExp(`[^\\S\\r\\n]*(${SUFFIX_PATTERN})$`, 'u');
+
   const MATCH_RE = new RegExp(
-    `(${SYMBOL_PATTERN})\\s?(${NUM_PATTERN})` +
-      `|(${NUM_PATTERN})\\s?(${SYMBOL_PATTERN})` +
-      `|\\b(${CODE_PATTERN})\\s(${NUM_PATTERN})\\b` +
-      `|\\b(${NUM_PATTERN})\\s(${CODE_PATTERN})\\b`,
-    'g',
+    `(${SYMBOL_PATTERN})\\s?(${AMOUNT_PATTERN})` +
+      `|(${AMOUNT_PATTERN})\\s?(${SYMBOL_PATTERN})` +
+      `|\\b(${CODE_PATTERN})\\s(${AMOUNT_PATTERN})\\b` +
+      `|\\b(${AMOUNT_PATTERN})\\s(${CODE_PATTERN})\\b`,
+    'gu',
   );
 
   const SINGLE_CHAR_SYMBOLS = SYMBOL_KEYS.filter((s) => [...s].length === 1);
@@ -36,7 +55,11 @@
   );
 
   function parseAmount(raw) {
-    const str = raw.trim();
+    let str = raw.trim();
+    const suffix = SUFFIX_RE.exec(str);
+    const multiplier = suffix ? MULTIPLIERS[suffix[1].toLowerCase()] : 1;
+    if (suffix) str = str.slice(0, suffix.index);
+
     const lastComma = str.lastIndexOf(',');
     const lastDot = str.lastIndexOf('.');
     let decimalSep = null;
@@ -59,7 +82,7 @@
       cleaned = str.replace(/[.,\s]/g, '');
     }
 
-    const value = parseFloat(cleaned);
+    const value = parseFloat(cleaned) * multiplier;
     return Number.isFinite(value) ? value : null;
   }
 

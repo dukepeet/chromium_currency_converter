@@ -33,7 +33,9 @@ and rendering logic are already currency-agnostic.
 - `content/converter.js` — pure matching/parsing logic: finds currency
   amounts in a string (by symbol, e.g. `€12.99`, or by ISO code, e.g.
   `12.99 EUR`), parses locale-formatted numbers (`1,234.56`, `1.234,56`,
-  `1 234,56`), converts using the cached rates, and formats the result.
+  `1 234,56`), expands magnitude suffixes (e.g. `$300k` → USD 300,000
+  and `1.5m EUR` → EUR 1,500,000), converts using the cached rates, and
+  formats the result.
 - `content/content.js` — walks the page's text nodes with a `TreeWalker`,
   wraps each detected price in a `<span>` followed by a small converted-value
   annotation, and uses a `MutationObserver` to keep annotating content that
@@ -63,3 +65,21 @@ No build step — it's plain JS/CSS/JSON.
   `199 SEK`, etc.).
 - No on/off toggle or per-site exceptions yet — this is intentionally just
   the core "find price → show conversion" engine for now.
+
+## Large amounts
+
+Amounts can use case-insensitive `k` (thousand), `m` / `mn` (million),
+`b` / `bn` (billion), or `t` / `tn` (trillion). The full words `thousand`,
+`million`, `billion`, and `trillion` are supported too. Billion means 10⁹
+and trillion means 10¹². An optional space may separate the number and
+suffix: `$300k`, `€1.5 M`, `USD 2bn`, and `2 million EUR` all work.
+The annotation follows the complete original amount, including its suffix.
+
+Existing separator rules still apply: a lone comma or dot followed by
+exactly three digits is treated as a thousands separator, not a decimal.
+Amounts must be in a single text node to be detected.
+
+## Tests
+
+Run `node --test tests/converter.test.cjs` (Node.js 18 or newer).
+No dependencies or build step are needed.
