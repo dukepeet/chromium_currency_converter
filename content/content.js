@@ -50,7 +50,7 @@
       annotation.className = ANNOTATION_CLASS;
       annotation.textContent = `(≈ ${formatAmount(converted, targetCurrency)})`;
       const inverse = (1 / rates[match.code]).toFixed(4);
-      annotation.title = `1 ${targetCurrency} ≈ ${inverse} ${match.code} · ECB reference rates via Frankfurter, ${ratesDate}`;
+      annotation.title = `1 ${match.code} ≈ ${inverse} ${targetCurrency} · ECB reference rates via Frankfurter, ${ratesDate}`;
       wrap.appendChild(document.createTextNode(' '));
       wrap.appendChild(annotation);
 

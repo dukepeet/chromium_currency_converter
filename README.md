@@ -75,15 +75,41 @@ and trillion means 10¹². An optional space may separate the number and
 suffix: `$300k`, `€1.5 M`, `USD 2bn`, and `2 million EUR` all work.
 The annotation follows the complete original amount, including its suffix.
 
-Existing separator rules still apply: a lone comma or dot followed by
-exactly three digits is treated as a thousands separator, not a decimal.
-Amounts must be in a single text node to be detected.
+Signed amounts are supported before the number or currency marker:
+`-300k EUR`, `USD -300k`, and `-$300k`. Leading fractions such as `-.5m EUR`
+mean minus half a million. A hyphen between two detected prices is a range
+separator (`$300k-$500k`), not a negative upper endpoint. Comma-separated
+prices such as `300k EUR,500k EUR` remain separate amounts.
+
+Existing separator rules still apply: with an integer part, a lone comma or
+dot followed by exactly three digits is treated as a thousands separator,
+not a decimal. A leading separator without an integer part is always decimal
+(`.500m` means half a million). Currency markers, numbers and suffixes are
+never joined across line separators. Amounts must be in a single text node
+to be detected.
 
 ## Tests
 
-Run `node --test tests/*.test.cjs` (Node.js 22 or newer).
-No dependencies or build step are needed.
+Use Node.js 22 or newer. Parser, generated consistency and background-worker
+tests run without dependencies:
 
-GitHub Actions runs syntax checks and the complete regression suite on
-Node.js 22 and 24 for pull requests, pushes to main/fix branches, and manual
-runs. See [the test plan](tests/README.md) for coverage and browser checks.
+```sh
+npm run test:unit
+```
+
+For the complete suite, including real Chromium page-script tests:
+
+```sh
+npm ci --include=dev
+npx playwright install chromium
+npm test
+```
+
+On Linux CI hosts, use `npx playwright install --with-deps chromium` to also
+install browser system libraries. Playwright is a development-only dependency;
+the extension still has no runtime dependency or build step.
+
+GitHub Actions runs syntax and Node tests on Node.js 22 and 24, plus a
+Chromium integration job with failure reports/traces, for pull requests,
+pushes to main/fix branches, and manual runs. See [the test plan](tests/README.md)
+for coverage and remaining browser checks.

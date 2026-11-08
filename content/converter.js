@@ -15,11 +15,19 @@
 
   const SYMBOL_PATTERN = SYMBOL_KEYS.map(escapeRegExp).join('|');
   const CODE_PATTERN = CODES.slice().sort((a, b) => b.length - a.length).join('|');
-  // Matches 1,234.56 / 1.234,56 / 1 234,56 / 1234 / 1234.5 etc.
-  const NUM_PATTERN = '\\d{1,3}(?:[\\s.,]\\d{3})+(?:[.,]\\d+)?|\\d+(?:[.,]\\d+)?';
+  // Deliberately exclude all line separators (including U+2028/U+2029).
+  const HSPACE = '[\\t\\p{Zs}]';
+  const SIGN = '[+\\-−]';
+  // Grouped thousands, ordinary decimals, and leading decimal fractions.
+  // Grouped alternatives must not win by matching only a numeric prefix.
+  const NUM_PATTERN = `(?:\\d{1,3}(?:,\\d{3})+(?:\\.\\d+)?` +
+    `|\\d{1,3}(?:\\.\\d{3})+(?:,\\d+)?` +
+    `|\\d{1,3}(?:${HSPACE}\\d{3})+(?:[.,]\\d+)?` +
+    `|\\d+(?:[.,]\\d+)?|[.,]\\d+)`;
+  const OPTIONAL_SIGN = `(?:${SIGN}${HSPACE}*)?`;
+  const NUMBER_RE = new RegExp(`^${OPTIONAL_SIGN}${NUM_PATTERN}$`, 'u');
 
-  // Keep all groups non-capturing: findMatches relies on the currency/amount
-  // capture positions below. Do not make the entire matcher case-insensitive:
+  // Do not make the entire matcher case-insensitive:
   // currency symbols and ISO codes retain their existing case rules.
   const MULTIPLIERS = {
     k: 1e3, thousand: 1e3,
@@ -34,14 +42,16 @@
   // A suffix must end here, not be the start of a word (e.g. "monthly"
   // or "Kč"). Horizontal spaces include non-breaking spaces used in prices.
   const SUFFIX_PATTERN = `(?:${MAGNITUDE_PATTERN})(?![\\p{L}\\p{N}_])`;
-  const AMOUNT_PATTERN = `(?:${NUM_PATTERN})(?:[^\\S\\r\\n]*${SUFFIX_PATTERN})?`;
-  const SUFFIX_RE = new RegExp(`[^\\S\\r\\n]*(${SUFFIX_PATTERN})$`, 'u');
-
+  const AMOUNT_PATTERN = `${OPTIONAL_SIGN}${NUM_PATTERN}(?![\\p{N}]|[.,][.,\\d])` +
+    `(?:${HSPACE}*${SUFFIX_PATTERN})?`;
+  const SUFFIX_RE = new RegExp(`${HSPACE}*(${SUFFIX_PATTERN})$`, 'u');
+  // Context checks live in findMatches: a comma or minus can be either
+  // numeric syntax or punctuation between two complete currency amounts.
   const MATCH_RE = new RegExp(
-    `(${SYMBOL_PATTERN})\\s?(${AMOUNT_PATTERN})` +
-      `|(${AMOUNT_PATTERN})\\s?(${SYMBOL_PATTERN})` +
-      `|\\b(${CODE_PATTERN})\\s(${AMOUNT_PATTERN})\\b` +
-      `|\\b(${AMOUNT_PATTERN})\\s(${CODE_PATTERN})\\b`,
+    `(?<symbolSign>${OPTIONAL_SIGN})(?<prefixSymbol>${SYMBOL_PATTERN})${HSPACE}*(?<symbolAmount>${AMOUNT_PATTERN})` +
+      `|(?<suffixSymbolAmount>${AMOUNT_PATTERN})${HSPACE}*(?<suffixSymbol>${SYMBOL_PATTERN})` +
+      `|(?<codeSign>${OPTIONAL_SIGN})(?<prefixCode>${CODE_PATTERN})${HSPACE}+(?<codeAmount>${AMOUNT_PATTERN})` +
+      `|(?<suffixCodeAmount>${AMOUNT_PATTERN})${HSPACE}+(?<suffixCode>${CODE_PATTERN})(?![\\p{L}\\p{N}_])`,
     'gu',
   );
 
@@ -51,7 +61,7 @@
   const QUICK_TEST = new RegExp(
     `[${SINGLE_CHAR_SYMBOLS.map(escapeRegExp).join('')}]` +
       (MULTI_CHAR_SYMBOLS.length ? `|${MULTI_CHAR_SYMBOLS.map(escapeRegExp).join('|')}` : '') +
-      `|\\b(?:${CODE_PATTERN})\\b`,
+      `|\\b(?:${CODE_PATTERN})(?![\\p{L}\\p{N}_])`,
   );
 
   function parseAmount(raw) {
@@ -59,6 +69,8 @@
     const suffix = SUFFIX_RE.exec(str);
     const multiplier = suffix ? MULTIPLIERS[suffix[1].toLowerCase()] : 1;
     if (suffix) str = str.slice(0, suffix.index);
+    if (!NUMBER_RE.test(str)) return null;
+    str = str.replace(/^([+−-])[\t\p{Zs}]*/u, '$1').replace('−', '-');
 
     const lastComma = str.lastIndexOf(',');
     const lastDot = str.lastIndexOf('.');
@@ -68,10 +80,10 @@
       decimalSep = lastComma > lastDot ? ',' : '.';
     } else if (lastComma > -1) {
       const digitsAfter = str.length - lastComma - 1;
-      decimalSep = digitsAfter !== 3 ? ',' : null;
+      decimalSep = /^[+−-]?,/u.test(str) || digitsAfter !== 3 ? ',' : null;
     } else if (lastDot > -1) {
       const digitsAfter = str.length - lastDot - 1;
-      decimalSep = digitsAfter !== 3 ? '.' : null;
+      decimalSep = /^[+−-]?\./u.test(str) || digitsAfter !== 3 ? '.' : null;
     }
 
     let cleaned;
@@ -82,7 +94,7 @@
       cleaned = str.replace(/[.,\s]/g, '');
     }
 
-    const value = parseFloat(cleaned) * multiplier;
+    const value = Number(cleaned) * multiplier;
     return Number.isFinite(value) ? value : null;
   }
 
@@ -95,25 +107,45 @@
     MATCH_RE.lastIndex = 0;
     let m;
     while ((m = MATCH_RE.exec(text))) {
-      let code = null;
-      let numStr = null;
-      if (m[1] !== undefined) {
-        code = resolveSymbolCode(m[1]);
-        numStr = m[2];
-      } else if (m[3] !== undefined) {
-        code = resolveSymbolCode(m[4]);
-        numStr = m[3];
-      } else if (m[5] !== undefined) {
-        code = m[5];
-        numStr = m[6];
-      } else if (m[7] !== undefined) {
-        code = m[8];
-        numStr = m[7];
-      }
+      const g = m.groups;
+      const code = g.prefixCode || g.suffixCode ||
+        resolveSymbolCode(g.prefixSymbol || g.suffixSymbol);
+      let numStr = g.symbolAmount || g.suffixSymbolAmount || g.codeAmount || g.suffixCodeAmount;
+      const markerSign = g.symbolSign || g.codeSign || '';
       if (!code || !numStr) continue;
-      const amount = parseAmount(numStr);
+      // A sign may precede the marker or number, but never both.
+      if (markerSign && /^[+−-]/u.test(numStr)) continue;
+
+      let raw = m[0];
+      let index = m.index;
+      let before = text.slice(0, index);
+      const previous = results[results.length - 1];
+      if (previous && previous.index + previous.length === index &&
+          /^[.,]/u.test(raw)) {
+        // "300k EUR,500k EUR": this comma separates complete prices; it
+        // is not the leading decimal separator of the second amount.
+        raw = raw.slice(1);
+        numStr = numStr.slice(1);
+        index++;
+        before = text.slice(0, index);
+      }
+      const sign = markerSign || (/^[+−-][\t\p{Zs}]*/u.exec(numStr) || [''])[0];
+      const isRange = sign.trim() === '-' && previous &&
+        /^[\t\p{Zs}]*$/u.test(text.slice(previous.index + previous.length, index));
+      if (isRange) {
+        // "$300k-$500k" contains two positive endpoints, not a negative price.
+        raw = raw.slice(sign.length);
+        index += sign.length;
+        if (!markerSign) numStr = numStr.slice(sign.length);
+      } else {
+        // Do not salvage the tail of malformed numbers, words or double signs.
+        if (/[+−-]$/u.test(before)) continue;
+        if (!g.prefixSymbol && /[\p{L}\p{N}_]$/u.test(before)) continue;
+        if (!g.prefixSymbol && !g.prefixCode && /\d[.,]+$/u.test(before)) continue;
+      }
+      const amount = parseAmount((isRange ? '' : markerSign) + numStr);
       if (amount === null) continue;
-      results.push({ index: m.index, length: m[0].length, code, amount, raw: m[0] });
+      results.push({ index, length: raw.length, code, amount, raw });
     }
     return results;
   }
